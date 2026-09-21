@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Word Catcher - Spelling Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;700&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Nunito', sans-serif;
+            background-color: #87CEEB; /* Sky blue fallback */
+            touch-action: none; /* Prevent pull-to-refresh on mobile */
+        }
+
+        h1, h2, h3, .brand-font {
+            font-family: 'Fredoka One', cursive;
+        }
+
+        #game-canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Overlay positioning */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(4px);
+            z-index: 10;
+        }
+
+        .menu-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+            z-index: 20;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Custom scrollbar for word list */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="game-canvas"></canvas>
+
+    <div id="main-menu" class="overlay">
+        <div class="bg-white p-8 rounded-3xl shadow-2xl text-center max-w-md w-[90%] border-4 border-blue-400 transform transition-transform hover:scale-105 duration-300">
+            <h1 class="text-5xl text-blue-500 mb-2 drop-shadow-md brand-font">Word Catcher</h1>
+            <p class="text-gray-600 mb-6 font-bold">Catch the letters in order to spell the words!</p>
+            
+            <div id="current-week-info" class="mb-4 text-md text-gray-700 font-semibold bg-blue-50 p-3 rounded-xl border border-blue-200">
+                Current Week: Loading...
+            </div>
+
+            <div class="space-y-3 mb-6">
+                <button onclick="startGame('current')" id="btn-play-current" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-6 rounded-2xl text-lg shadow-lg active:translate-y-1 transition-all brand-font flex flex-col items-center">
+                    <span>PLAY THIS WEEK'S WORDS</span>
+                    <span id="current-word-count" class="text-sm font-normal text-green-100 opacity-90 mt-1"></span>
+                </button>
+                
+                <button onclick="showPastWeeksMenu()" class="w-full bg-orange-400 hover:bg-orange-500 text-white font-bold py-3 px-6 rounded-2xl text-md shadow transition-all brand-font">
+                    PLAY PAST WEEKS
+                </button>
+
+                <button onclick="startGame('cumulative')" id="btn-play-cumulative" class="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-6 rounded-2xl text-md shadow transition-all brand-font flex flex-col items-center">
+                    <span>CUMULATIVE MODE</span>
+                    <span id="cumulative-word-count" class="text-sm font-normal text-purple-100 opacity-90 mt-1"></span>
+                </button>
+            </div>
+
+            <button onclick="showConfig()" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 px-6 rounded-xl border-2 border-gray-300 transition-all flex items-center justify-center gap-2">
+                <span>⚙️ Manage Word Lists</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Past Weeks Menu -->
+    <div id="past-weeks-menu" class="menu-overlay hidden">
+        <div class="bg-white p-6 rounded-3xl shadow-2xl max-w-md w-[90%] border-4 border-orange-400 max-h-[80vh] flex flex-col">
+            <h2 class="text-3xl text-orange-500 mb-2 brand-font text-center">Past Weeks</h2>
+            <p class="text-gray-500 text-sm text-center mb-4">Select a previous week to practice.</p>
+            
+            <div id="past-weeks-list" class="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-2">
+                <!-- Past weeks populated here -->
+            </div>
+
+            <button onclick="hidePastWeeksMenu()" class="mt-4 w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-3 px-4 rounded-xl transition-colors">
+                Back to Menu
+            </button>
+        </div>
+    </div>
+
+    <!-- Manage Word Lists Menu -->
+    <div id="config-menu" class="menu-overlay hidden">
+        <div class="bg-white p-6 rounded-3xl shadow-2xl max-w-2xl w-[95%] border-4 border-gray-400 max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-3xl text-gray-700 brand-font">Manage Lists</h2>
+                <button onclick="hideConfig()" class="text-gray-500 hover:text-red-500 font-bold text-xl">&times;</button>
+            </div>
+            
+            <div class="flex flex-col md:flex-row gap-4 flex-1 min-h-0">
+                <!-- Left Sidebar: Weeks List -->
+                <div class="w-full md:w-1/3 flex flex-col border-r border-gray-200 pr-4">
+                    <h3 class="font-bold text-gray-700 mb-2 flex justify-between items-center">
+                        Weeks
+                        <button onclick="generateSchoolYearWeeks()" class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200" title="Generate weeks for current school year">Auto-Generate</button>
+                    </h3>
+                    <div id="admin-weeks-list" class="flex-1 overflow-y-auto custom-scrollbar space-y-1">
+                        <!-- Weeks populated here -->
+                    </div>
+                </div>
+
+                <!-- Right Area: Editor -->
+                <div class="w-full md:w-2/3 flex flex-col pl-2">
+                    <div id="editor-header" class="mb-4">
+                        <h3 id="editing-week-title" class="font-bold text-xl text-blue-600 mb-1">Select a week</h3>
+                        <p id="editing-week-dates" class="text-sm text-gray-500">...</p>
+                    </div>
+
+                    <div class="flex-1 flex flex-col min-h-0">
+                        <label class="block text-gray-700 text-sm font-bold mb-2" for="word-input-area">Words (one per line or comma separated)</label>
+                        <textarea id="word-input-area" class="w-full flex-1 p-3 border-2 border-gray-300 rounded-xl resize-none focus:outline-none focus:border-blue-500 font-mono text-lg uppercase" placeholder="e.g.&#10;APPLE&#10;BANANA&#10;ORANGE" disabled></textarea>
+                    </div>
+
+                    <div class="mt-4 flex gap-3">
+                        <button id="btn-save-words" onclick="saveCurrentWeekWords()" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            Save List
+                        </button>
+                    </div>
+                    <div id="save-status" class="mt-2 text-center text-sm font-bold h-5"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="game-over-menu" class="overlay hidden">
+        <div class="bg-white p-8 rounded-3xl shadow-2xl text-center max-w-md w-[90%] border-4 border-red-400 transform transition-transform scale-110">
+            <h1 id="game-over-title" class="text-5xl text-red-500 mb-2 brand-font">Game Over!</h1>
+            <p class="text-xl text-gray-700 mb-2 font-bold">You spelled <span id="final-words-spelled" class="text-blue-500 text-2xl">0</span> words!</p>
+            <p class="text-lg text-gray-600 mb-6">Final Score: <span id="final-score" class="font-bold text-green-500">0</span></p>
+            
+            <button onclick="returnToMenu()" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-4 px-6 rounded-2xl text-xl mb-4 shadow-lg transition-all brand-font">
+                MAIN MENU
+            </button>
+        </div>
+    </div>
+
+    <div id="game-ui" class="absolute top-0 left-0 w-full pointer-events-none hidden flex flex-col justify-between h-full p-4">
+        <!-- Top bar: Score and Lives -->
+        <div class="flex justify-between items-start">
+            <div class="bg-white/90 px-4 py-2 rounded-2xl shadow-md border-2 border-yellow-400">
+                <span class="text-yellow-500 font-bold brand-font text-2xl">⭐ <span id="ui-score">0</span></span>
+            </div>
+            <div class="bg-white/90 px-4 py-2 rounded-2xl shadow-md border-2 border-red-400 text-red-500 text-2xl brand-font tracking-widest" id="ui-lives">
+                ❤️❤️❤️
+            </div>
+        </div>
+
+        <!-- Middle: Word spelling progress -->
+        <div class="flex justify-center items-center mt-8 absolute top-16 left-0 w-full">
+            <div class="bg-white/95 px-8 py-4 rounded-3xl shadow-lg border-4 border-blue-400 text-center">
+                <div id="ui-target-word" class="text-5xl font-bold brand-font tracking-widest text-blue-600 flex gap-2">
+                    <!-- Word letters will be injected here -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Bottom overlay for generic messages (like Word Complete) -->
+        <div id="message-overlay" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-5xl brand-font text-green-400 drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] opacity-0 transition-opacity duration-300">
+            GREAT JOB!
+        </div>
+    </div>
+
+    <script>
+        // --- Data Management (Supabase) ---
+        const supabaseUrl = 'https://apgfskdxexlyyavmhdlg.supabase.co';
+        const supabaseKey = 'sb_publishable_rvwuan8wg1tyegGFSt2jMA_E1CJaM5L';
+        const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey, {
+            db: { schema: 'WordCatcher' }
+        });
+
+        // Format: { "YYYY-MM-DD_YYYY-MM-DD": ["WORD1", "WORD2"] }
+        let wordListsData = {};
+        let schoolWeeks = [];
+        let currentWeekId = null;
+        let selectedAdminWeekId = null;
+
+        // Default word list if no database is connected
+        const DEFAULT_WORDS = ["CAT", "DOG", "BIRD", "FISH", "APPLE", "GRAPE", "WATER", "HOUSE", "TRAIN", "HAPPY", "GREEN", "BLUE"];
+        
+        // Game State Variables
+        let state = {
+            isPlaying: false,
+            playMode: 'current', // 'current', 'past', 'cumulative'
+            words: [], // Words for the current session
+            currentWord: "",
+            currentIndex: 0,
+            score: 0,
+            lives: 3,
+            wordsSpelled: 0,
+            speedMultiplier: 1
+        };
+
+        // Entities
+        let player = {
+            x: 0, y: 0, width: 80, height: 60, speed: 8, targetX: null
+        };
+        let fallingLetters = [];
+        let particles = [];
+        let clouds = [];
+
+        // Canvas Setup
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+
+        // UI Elements
+        const uiScore = document.getElementById('ui-score');
+        const uiLives = document.getElementById('ui-lives');
+        const uiTargetWord = document.getElementById('ui-target-word');
+        const msgOverlay = document.getElementById('message-overlay');
+
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+            
+            // Reposition player to bottom center on resize
+            if(!state.isPlaying) {
+                player.x = width / 2;
+            }
+            player.y = height - player.height - 20;
+            
+            // Ensure targetX respects new bounds
+            if (player.targetX !== null) {
+                 player.targetX = Math.min(Math.max(player.targetX, player.width/2), width - player.width/2);
+            }
+        }
+        window.addEventListener('resize', resize);
+        resize(); // Initial sizing
+
+        // --- Date Logic & App Initialization ---
+
+        function getStartOfWeek(date) {
+            const d = new Date(date);
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+            d.setDate(diff);
+            d.setHours(0,0,0,0);
+            return d;
+        }
+
+        async function loadData() {
+            try {
+                const { data, error } = await supabaseClient.from('weekly_lists').select('*');
+                if (error) throw error;
+                
+                wordListsData = {};
+                if (data) {
+                    data.forEach(row => {
+                        wordListsData[row.week_id] = row.words || [];
+                    });
+                }
+            } catch (e) {
+                console.error("Error loading from Supabase:", e);
+            }
+            
+            generateSchoolYearWeeks();
+            updateMainMenuUI(); // Refresh UI after data loads
+        }
+
+        function getWordsForWeek(weekId) {
+            return wordListsData[weekId] || [];
+        }
+
+        function getAllCumulativeWords() {
+            let allWords = new Set();
+            const today = new Date();
+            today.setHours(0,0,0,0);
+
+            // Collect words from all weeks up to the current week
+            for (const week of schoolWeeks) {
+                // If the week hasn't started yet, don't include it in cumulative
+                if (week.start <= today) {
+                    const words = getWordsForWeek(week.id);
+                    words.forEach(w => allWords.add(w));
+                }
+            }
+            return Array.from(allWords);
+        }
+
+        function getShortDateStr(date) {
+            return `${date.getMonth()+1}/${date.getDate()}`;
+        }
+
+        // --- UI Updates ---
+
+        function updateMainMenuUI() {
+            const currentWeekData = schoolWeeks.find(w => w.id === currentWeekId);
+            const infoDiv = document.getElementById('current-week-info');
+            const btnCurrentCount = document.getElementById('current-word-count');
+            const btnCumulativeCount = document.getElementById('cumulative-word-count');
+            const btnCurrent = document.getElementById('btn-play-current');
+            const btnCumulative = document.getElementById('btn-play-cumulative');
+
+            if (currentWeekData) {
+                infoDiv.innerHTML = `Current Week: <span class="font-bold text-blue-800">${getShortDateStr(currentWeekData.start)} - ${getShortDateStr(currentWeekData.end)}</span>`;
+            } else {
+                infoDiv.innerHTML = `Current Week: Unknown`;
+            }
+
+            const currentWords = getWordsForWeek(currentWeekId);
+            const cumulativeWords = getAllCumulativeWords();
+
+            if (currentWords.length > 0) {
+                btnCurrentCount.textContent = `${currentWords.length} words`;
+                btnCurrent.classList.remove('opacity-50', 'cursor-not-allowed');
+                btnCurrent.disabled = false;
+            } else {
+                btnCurrentCount.textContent = `No words set yet`;
+                btnCurrent.classList.add('opacity-50', 'cursor-not-allowed');
+                btnCurrent.disabled = true;
+            }
+
+            if (cumulativeWords.length > 0) {
+                btnCumulativeCount.textContent = `${cumulativeWords.length} words total`;
+                btnCumulative.classList.remove('opacity-50', 'cursor-not-allowed');
+                btnCumulative.disabled = false;
+            } else {
+                 btnCumulativeCount.textContent = `No past words available`;
+                 btnCumulative.classList.add('opacity-50', 'cursor-not-allowed');
+                 btnCumulative.disabled = true;
+            }
+        }
+
+        function showPastWeeksMenu() {
+            const menu = document.getElementById('past-weeks-menu');
+            const listContainer = document.getElementById('past-weeks-list');
+            listContainer.innerHTML = '';
+            
+            const today = new Date();
+            today.setHours(0,0,0,0);
+
+            // Filter weeks that are in the past or current, and have words
+            const availableWeeks = schoolWeeks.filter(w => w.start <= today && getWordsForWeek(w.id).length > 0);
+
+            if (availableWeeks.length === 0) {
+                listContainer.innerHTML = '<p class="text-center text-gray-500 mt-4 italic">No past weeks with words found.</p>';
+            } else {
+                // Sort newest first
+                availableWeeks.sort((a,b) => b.start - a.start).forEach(w => {
+                    const wordsCount = getWordsForWeek(w.id).length;
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left bg-orange-50 hover:bg-orange-100 border border-orange-200 p-3 rounded-xl mb-2 transition-colors flex justify-between items-center";
+                    btn.innerHTML = `
+                        <div>
+                            <div class="font-bold text-orange-800">${w.label}</div>
+                            <div class="text-xs text-orange-600">${getShortDateStr(w.start)} - ${getShortDateStr(w.end)}</div>
+                        </div>
+                        <div class="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-1 rounded-full">
+                            ${wordsCount} words
+                        </div>
+                    `;
+                    btn.onclick = () => {
+                        hidePastWeeksMenu();
+                        startGame('past', w.id);
+                    };
+                    listContainer.appendChild(btn);
+                });
+            }
+
+            menu.classList.remove('hidden');
+        }
+
+        function hidePastWeeksMenu() {
+            document.getElementById('past-weeks-menu').classList.add('hidden');
+        }
+
+        // --- Admin / Config Menu ---
+
+        function showConfig() {
+            document.getElementById('config-menu').classList.remove('hidden');
+            renderAdminWeeksList();
+            if (currentWeekId) {
+                selectAdminWeek(currentWeekId);
+            }
+        }
+
+        function hideConfig() {
+            document.getElementById('config-menu').classList.add('hidden');
+            updateMainMenuUI(); // Refresh main menu in case words changed
+        }
+
+        function renderAdminWeeksList() {
+            const listContainer = document.getElementById('admin-weeks-list');
+            listContainer.innerHTML = '';
+            
+            const today = new Date();
+            
+            schoolWeeks.forEach(w => {
+                const wordsCount = getWordsForWeek(w.id).length;
+                const isCurrent = w.id === currentWeekId;
+                
+                const div = document.createElement('div');
+                div.className = `p-2 rounded-lg cursor-pointer flex justify-between items-center transition-colors border-l-4 ${selectedAdminWeekId === w.id ? 'bg-blue-100 border-blue-500' : 'hover:bg-gray-100 border-transparent'} ${isCurrent ? 'font-bold' : ''}`;
+                
+                div.innerHTML = `
+                    <div class="truncate pr-2">
+                        <div class="text-sm ${isCurrent ? 'text-blue-800' : 'text-gray-800'}">${w.label} ${isCurrent ? '⭐' : ''}</div>
+                        <div class="text-xs text-gray-500">${getShortDateStr(w.start)}</div>
+                    </div>
+                    ${wordsCount > 0 ? `<span class="bg-green-100 text-green-800 text-[10px] font-bold px-1.5 py-0.5 rounded-full">${wordsCount}</span>` : ''}
+                `;
+                
+                div.onclick = () => selectAdminWeek(w.id);
+                listContainer.appendChild(div);
+            });
+        }
+
+        function selectAdminWeek(weekId) {
+            selectedAdminWeekId = weekId;
+            const weekData = schoolWeeks.find(w => w.id === weekId);
+            
+            renderAdminWeeksList(); // update active styling
+            
+            document.getElementById('editing-week-title').textContent = weekData.label;
+            document.getElementById('editing-week-dates').textContent = `${weekData.start.toLocaleDateString()} to ${weekData.end.toLocaleDateString()}`;
+            
+            const textarea = document.getElementById('word-input-area');
+            const saveBtn = document.getElementById('btn-save-words');
+            
+            textarea.disabled = false;
+            saveBtn.disabled = false;
+            
+            const words = getWordsForWeek(weekId);
+            textarea.value = words.join('\n');
+            document.getElementById('save-status').textContent = '';
+        }
+
+        async function saveCurrentWeekWords() {
+            if (!selectedAdminWeekId) return;
+            
+            const saveBtn = document.getElementById('btn-save-words');
+            const textarea = document.getElementById('word-input-area');
+            const statusDiv = document.getElementById('save-status');
+            
+            saveBtn.disabled = true;
+            statusDiv.textContent = "Saving to database...";
+            statusDiv.className = "mt-2 text-center text-sm font-bold h-5 text-gray-500";
+
+            const rawText = textarea.value;
+            
+            // Parse words: split by newline or comma, trim, uppercase, remove empties, keep only letters
+            const words = rawText.split(/[\n,]+/)
+                .map(w => w.trim().toUpperCase())
+                .filter(w => w.length > 0 && /^[A-Z]+$/.test(w));
+            
+            // Remove duplicates
+            const uniqueWords = [...new Set(words)];
+            
+            // Update local state immediately for fast UI
+            wordListsData[selectedAdminWeekId] = uniqueWords;
+            
+            const weekData = schoolWeeks.find(w => w.id === selectedAdminWeekId);
+            
+            // Push to Supabase
+            const { error } = await supabaseClient
+                .from('weekly_lists')
+                .upsert({ 
+                    week_id: selectedAdminWeekId,
+                    start_date: weekData.start.toISOString().split('T')[0],
+                    end_date: weekData.end.toISOString().split('T')[0],
+                    words: uniqueWords
+                });
+            
+            if (error) {
+                console.error("Supabase Save Error:", error);
+                statusDiv.textContent = "Error saving to database! Check console.";
+                statusDiv.className = "mt-2 text-center text-sm font-bold h-5 text-red-500";
+            } else {
+                textarea.value = uniqueWords.join('\n');
+                statusDiv.textContent = `Saved ${uniqueWords.length} words to database!`;
+                statusDiv.className = "mt-2 text-center text-sm font-bold h-5 text-green-500";
+            }
+            
+            saveBtn.disabled = false;
+            
+            setTimeout(() => {
+                statusDiv.textContent = '';
+            }, 3000);
+            
+            renderAdminWeeksList(); // Update badge counts
+            updateMainMenuUI(); // Update main menu if current week was edited
+        }
+
+        // --- Game Logic Updates ---
+
+        function startGame(mode, specificWeekId = null) {
+            let wordsToPlay = [];
+
+            if (mode === 'current') {
+                wordsToPlay = getWordsForWeek(currentWeekId);
+            } else if (mode === 'past' && specificWeekId) {
+                wordsToPlay = getWordsForWeek(specificWeekId);
+            } else if (mode === 'cumulative') {
+                wordsToPlay = getAllCumulativeWords();
+            }
+
+            if (wordsToPlay.length === 0) {
+                // Fallback, shouldn't happen due to disabled buttons
+                wordsToPlay = [...DEFAULT_WORDS];
+                alert("No words found, playing default list.");
+            }
+
+            state.words = [...wordsToPlay];
+            state.playMode = mode;
+            
+            document.getElementById('main-menu').classList.add('hidden');
+            document.getElementById('game-over-menu').classList.add('hidden');
+            document.getElementById('game-ui').classList.remove('hidden');
+
+            state.isPlaying = true;
+            state.score = 0;
+            state.lives = 3;
+            state.wordsSpelled = 0;
+            state.speedMultiplier = 1;
+            
+            player.x = width / 2;
+            player.targetX = width / 2;
+            fallingLetters = [];
+            particles = [];
+            
+            // Randomize words array order for this session
+            state.words.sort(() => Math.random() - 0.5);
+            pickNextWord();
+            
+            generateClouds();
+            updateHUD();
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        function pickNextWord() {
+            if (state.words.length === 0) {
+                // Fallback if empty array somehow
+                state.words = [...DEFAULT_WORDS];
+            }
+            // Cycle through words based on wordsSpelled count
+            const wordIdx = state.wordsSpelled % state.words.length;
+            state.currentWord = state.words[wordIdx];
+            state.currentIndex = 0;
+            
+            fallingLetters = []; // Clear letters on new word
+            updateWordUI();
+        }
+
+        function endGame() {
+            state.isPlaying = false;
+            document.getElementById('game-ui').classList.add('hidden');
+            document.getElementById('game-over-menu').classList.remove('hidden');
+            
+            document.getElementById('final-words-spelled').textContent = state.wordsSpelled;
+            document.getElementById('final-score').textContent = state.score;
+            
+            if(state.wordsSpelled === 0) {
+                document.getElementById('game-over-title').textContent = "Keep Trying!";
+                document.getElementById('game-over-title').className = "text-5xl text-yellow-500 mb-2 brand-font";
+            } else {
+                document.getElementById('game-over-title').textContent = "Game Over!";
+                document.getElementById('game-over-title').className = "text-5xl text-red-500 mb-2 brand-font";
+            }
+        }
+
+        function returnToMenu() {
+            document.getElementById('game-over-menu').classList.add('hidden');
+            document.getElementById('main-menu').classList.remove('hidden');
+            
+            // Render background animation even when not playing
+            if (!state.isPlaying && !animationId) {
+                gameLoop();
+            }
+        }
+
+        let keys = { ArrowLeft: false, ArrowRight: false, a: false, d: false };
+
+        window.addEventListener('keydown', (e) => {
+            if (keys.hasOwnProperty(e.key)) keys[e.key] = true;
+            if (keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = true;
+            // Clear targetX when using keyboard
+            if(e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key.toLowerCase() === 'a' || e.key.toLowerCase() === 'd') {
+                player.targetX = null; 
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (keys.hasOwnProperty(e.key)) keys[e.key] = false;
+            if (keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false;
+        });
+
+        // Touch / Mouse controls
+        function handleMove(e) {
+            if (!state.isPlaying) return;
+            e.preventDefault();
+            let clientX;
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+            } else {
+                clientX = e.clientX;
+            }
+            player.targetX = clientX;
+        }
+
+        canvas.addEventListener('touchstart', handleMove, {passive: false});
+        canvas.addEventListener('touchmove', handleMove, {passive: false});
+        canvas.addEventListener('mousedown', (e) => { 
+            if(state.isPlaying) player.targetX = e.clientX; 
+        });
+        canvas.addEventListener('mousemove', (e) => {
+            if(state.isPlaying && e.buttons === 1) { // Only drag if mouse button held
+                player.targetX = e.clientX;
+            }
+        });
+
+        const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+        function spawnLetter() {
+            if (!state.isPlaying) return;
+            
+            const radius = width < 600 ? 25 : 35; // Responsive bubble size
+            const x = Math.random() * (width - radius * 2) + radius;
+            const y = -radius;
+            
+            // Base speed increases with words spelled
+            const baseSpeed = (2 + Math.random() * 2) * state.speedMultiplier;
+            
+            let char;
+            // 40% chance to spawn the EXACT letter needed, 60% random letter
+            if (Math.random() < 0.40) {
+                char = state.currentWord[state.currentIndex];
+            } else {
+                char = ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
+            }
+
+            // Colors
+            const colors = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#FF8ED4', '#9D4EDD'];
+            const color = colors[Math.floor(Math.random() * colors.length)];
+
+            fallingLetters.push({
+                x, y, radius, speed: baseSpeed, char, color,
+                wobbleOffset: Math.random() * Math.PI * 2 // For floating effect
+            });
+        }
+
+        function createParticles(x, y, color) {
+            for(let i=0; i<15; i++) {
+                particles.push({
+                    x, y,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: (Math.random() - 0.5) * 10,
+                    life: 1.0,
+                    color: color,
+                    size: Math.random() * 6 + 2
+                });
+            }
+        }
+
+        function updateEntities() {
+            // Player movement
+            if (player.targetX !== null) {
+                // Smooth move to target
+                const dx = player.targetX - player.x;
+                player.x += dx * 0.15; 
+            } else {
+                // Keyboard move
+                if (keys.ArrowLeft || keys.a) player.x -= player.speed;
+                if (keys.ArrowRight || keys.d) player.x += player.speed;
+            }
+
+            // Clamp player to screen
+            player.x = Math.max(player.width/2, Math.min(width - player.width/2, player.x));
+
+            // Letters
+            // Spawn timer: roughly every 60 frames (1 sec)
+            if (Math.random() < 0.02 * state.speedMultiplier) {
+                spawnLetter();
+            }
+
+            for (let i = fallingLetters.length - 1; i >= 0; i--) {
+                let letter = fallingLetters[i];
+                letter.y += letter.speed;
+                // Add a little horizontal wobble
+                letter.x += Math.sin(Date.now() / 500 + letter.wobbleOffset) * 0.5;
+
+                // Collision detection (Circle vs Rect)
+                // Simplification: treat player as a rectangle
+                let playerLeft = player.x - player.width/2;
+                let playerRight = player.x + player.width/2;
+                let playerTop = player.y - player.height/2; // Center offset
+                let playerBottom = player.y + player.height/2;
+
+                // Close enough check
+                if (letter.y + letter.radius > playerTop && 
+                    letter.y - letter.radius < playerTop + 20 && // Only catch at the top rim of the bucket
+                    letter.x > playerLeft && letter.x < playerRight) {
+                    
+                    // Caught!
+                    const targetChar = state.currentWord[state.currentIndex];
+                    
+                    if (letter.char === targetChar) {
+                        // Correct letter!
+                        createParticles(letter.x, letter.y, '#4ADE80'); // Green particles
+                        state.currentIndex++;
+                        state.score += 10;
+                        updateWordUI();
+                        updateHUD();
+
+                        // Word complete check
+                        if (state.currentIndex >= state.currentWord.length) {
+                            state.wordsSpelled++;
+                            state.score += 50; // Bonus for completing word
+                            state.speedMultiplier = Math.min(2.5, 1 + (state.wordsSpelled * 0.1)); // Speed up slightly
+                            showMessage("CORRECT!", "text-green-400");
+                            
+                            setTimeout(() => {
+                                if(state.isPlaying) pickNextWord();
+                            }, 1000);
+                        }
+
+                    } else {
+                        // Wrong letter!
+                        createParticles(letter.x, letter.y, '#EF4444'); // Red particles
+                        state.lives--;
+                        updateHUD();
+                        
+                        // Screen flash effect
+                        ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+                        ctx.fillRect(0,0,width,height);
+                        
+                        if (state.lives <= 0) {
+                            endGame();
+                        }
+                    }
+                    
+                    fallingLetters.splice(i, 1);
+                    continue; // skip to next letter
+                }
+
+                // Remove if off screen bottom
+                if (letter.y - letter.radius > height) {
+                    fallingLetters.splice(i, 1);
+                }
+            }
+
+            // Particles
+            for(let i=particles.length-1; i>=0; i--) {
+                let p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.2; // gravity
+                p.life -= 0.02;
+                if(p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+            
+            // Clouds
+            for(let i=0; i<clouds.length; i++){
+                clouds[i].x -= clouds[i].speed;
+                if(clouds[i].x + clouds[i].w < 0){
+                    clouds[i].x = width + Math.random() * 200;
+                    clouds[i].y = Math.random() * (height/2);
+                }
+            }
+        }
+
+        function generateClouds() {
+            clouds = [];
+            for(let i=0; i<5; i++){
+                clouds.push({
+                    x: Math.random() * width,
+                    y: Math.random() * (height/2),
+                    w: 100 + Math.random() * 150,
+                    h: 40 + Math.random() * 40,
+                    speed: 0.2 + Math.random() * 0.5,
+                    opacity: 0.4 + Math.random() * 0.4
+                });
+            }
+        }
+
+        function drawBackground() {
+            // Gradient Sky
+            let grad = ctx.createLinearGradient(0,0,0,height);
+            grad.addColorStop(0, "#4facfe");
+            grad.addColorStop(1, "#00f2fe");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw clouds
+            ctx.fillStyle = '#ffffff';
+            clouds.forEach(c => {
+                ctx.globalAlpha = c.opacity;
+                ctx.beginPath();
+                ctx.ellipse(c.x, c.y, c.w/2, c.h/2, 0, 0, Math.PI*2);
+                ctx.fill();
+                // Add some bumps to the cloud
+                ctx.beginPath();
+                ctx.ellipse(c.x - c.w/4, c.y - c.h/4, c.w/3, c.h/2.5, 0, 0, Math.PI*2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(c.x + c.w/4, c.y - c.h/3, c.w/2.5, c.h/2, 0, 0, Math.PI*2);
+                ctx.fill();
+            });
+            ctx.globalAlpha = 1.0;
+        }
+
+        function drawPlayer() {
+            ctx.save();
+            ctx.translate(player.x, player.y);
+            
+            // Draw a cute bucket/basket
+            ctx.fillStyle = '#D97706'; // Amber/Wood color
+            ctx.beginPath();
+            // Trapezoid shape
+            ctx.moveTo(-player.width/2, -player.height/2);
+            ctx.lineTo(player.width/2, -player.height/2);
+            ctx.lineTo(player.width/2 - 10, player.height/2);
+            ctx.lineTo(-player.width/2 + 10, player.height/2);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Bucket rim
+            ctx.fillStyle = '#B45309';
+            ctx.beginPath();
+            ctx.ellipse(0, -player.height/2, player.width/2 + 5, 8, 0, 0, Math.PI*2);
+            ctx.fill();
+            
+            // Bucket hole (top)
+            ctx.fillStyle = '#78350F';
+            ctx.beginPath();
+            ctx.ellipse(0, -player.height/2, player.width/2 - 2, 5, 0, 0, Math.PI*2);
+            ctx.fill();
+            
+            // Bucket details (lines)
+            ctx.strokeStyle = '#92400E';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-player.width/4, -player.height/2 + 5);
+            ctx.lineTo(-player.width/4 + 5, player.height/2);
+            ctx.moveTo(0, -player.height/2 + 5);
+            ctx.lineTo(0, player.height/2);
+            ctx.moveTo(player.width/4, -player.height/2 + 5);
+            ctx.lineTo(player.width/4 - 5, player.height/2);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function drawLetters() {
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            fallingLetters.forEach(letter => {
+                ctx.save();
+                ctx.translate(letter.x, letter.y);
+                
+                // Bubble glow
+                ctx.shadowColor = letter.color;
+                ctx.shadowBlur = 10;
+                
+                // Draw Bubble
+                ctx.beginPath();
+                ctx.arc(0, 0, letter.radius, 0, Math.PI * 2);
+                let grad = ctx.createRadialGradient(-letter.radius/3, -letter.radius/3, 2, 0, 0, letter.radius);
+                grad.addColorStop(0, '#ffffff');
+                grad.addColorStop(0.3, letter.color);
+                grad.addColorStop(1, '#000000'); // darken edges
+                ctx.fillStyle = grad;
+                ctx.globalAlpha = 0.9;
+                ctx.fill();
+                
+                // Bubble reflection
+                ctx.beginPath();
+                ctx.arc(-letter.radius/3, -letter.radius/3, letter.radius/4, 0, Math.PI*2);
+                ctx.fillStyle = 'rgba(255,255,255,0.4)';
+                ctx.fill();
+
+                // Draw Text
+                ctx.shadowBlur = 0;
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = '#ffffff';
+                ctx.font = `bold ${letter.radius * 1.2}px 'Fredoka One'`;
+                // Add a slight text stroke for readability
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 2;
+                ctx.strokeText(letter.char, 0, 2);
+                ctx.fillText(letter.char, 0, 2);
+                
+                ctx.restore();
+            });
+        }
+
+        function drawParticles() {
+            particles.forEach(p => {
+                ctx.save();
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+                ctx.fill();
+                ctx.restore();
+            });
+        }
+
+        let animationId;
+        
+        function gameLoop() {
+            // Clear canvas
+            ctx.clearRect(0, 0, width, height);
+            
+            drawBackground();
+
+            if (state.isPlaying) {
+                updateEntities();
+                drawPlayer();
+                drawLetters();
+                drawParticles();
+                animationId = requestAnimationFrame(gameLoop);
+            } else {
+                // If not playing, just animate clouds for the main menu background
+                for(let i=0; i<clouds.length; i++){
+                    clouds[i].x -= clouds[i].speed;
+                    if(clouds[i].x + clouds[i].w < 0){
+                        clouds[i].x = width + Math.random() * 200;
+                        clouds[i].y = Math.random() * (height/2);
+                    }
+                }
+                animationId = requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // Initialization on page load
+        window.onload = () => {
+            loadData(); // Replaces loadSavedConfig
+            generateClouds();
+            gameLoop(); // Start background animation
+        };
+
+    </script>
+</body>
+</html>
