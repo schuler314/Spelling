@@ -334,6 +334,102 @@
             return `${date.getMonth()+1}/${date.getDate()}`;
         }
 
+        function generateSchoolYearWeeks() {
+            schoolWeeks = [];
+            const now = new Date();
+            let startYear = now.getFullYear();
+            
+            // If we are before August, school year started last year
+            if (now.getMonth() < 7) {
+                startYear--;
+            }
+            
+            // Start the first week in the first week of August
+            let startDate = new Date(startYear, 7, 1);
+            
+            // Move to the first Monday
+            while(startDate.getDay() !== 1) {
+                startDate.setDate(startDate.getDate() + 1);
+            }
+
+            // Generate 40 weeks
+            for (let i = 0; i < 40; i++) {
+                let weekStart = new Date(startDate);
+                weekStart.setDate(weekStart.getDate() + (i * 7));
+                let weekEnd = new Date(weekStart);
+                weekEnd.setDate(weekEnd.getDate() + 4); // Friday
+
+                let id = `${weekStart.toISOString().split('T')[0]}_${weekEnd.toISOString().split('T')[0]}`;
+                let label = `Week ${i + 1}`;
+
+                schoolWeeks.push({
+                    id: id,
+                    start: weekStart,
+                    end: weekEnd,
+                    label: label
+                });
+            }
+
+            // Find current week id
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            
+            // Find the week that covers 'today'. A week spans 7 days from the start date (Monday).
+            const currentWeek = schoolWeeks.find(w => {
+                const weekEndFull = new Date(w.start);
+                weekEndFull.setDate(weekEndFull.getDate() + 6); // Sunday of that week
+                return today >= w.start && today <= weekEndFull;
+            });
+            
+            if (currentWeek) {
+                currentWeekId = currentWeek.id;
+            } else {
+                // If today is out of bounds (e.g. summer break), set it to the first week
+                currentWeekId = schoolWeeks[0].id;
+            }
+            
+            // Re-render if admin panel is open
+            if (!document.getElementById('config-menu').classList.contains('hidden')) {
+                renderAdminWeeksList();
+            }
+        }
+
+        function updateHUD() {
+            if (!uiScore || !uiLives) return;
+            uiScore.textContent = state.score;
+            let livesText = "";
+            for(let i=0; i<state.lives; i++) livesText += "❤️";
+            uiLives.textContent = livesText;
+        }
+
+        function updateWordUI() {
+            if (!uiTargetWord) return;
+            uiTargetWord.innerHTML = '';
+            for (let i = 0; i < state.currentWord.length; i++) {
+                let span = document.createElement('span');
+                span.textContent = state.currentWord[i];
+                if (i < state.currentIndex) {
+                    span.className = "text-green-500 opacity-50"; // Spelled
+                } else if (i === state.currentIndex) {
+                    span.className = "text-blue-600 animate-bounce inline-block"; // Current target
+                } else {
+                    span.className = "text-gray-300"; // Unspelled
+                }
+                uiTargetWord.appendChild(span);
+            }
+        }
+
+        function showMessage(text, colorClass) {
+            if (!msgOverlay) return;
+            msgOverlay.textContent = text;
+            msgOverlay.className = `absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-5xl brand-font drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] transition-opacity duration-300 ${colorClass}`;
+            msgOverlay.style.opacity = 1;
+            
+            setTimeout(() => {
+                msgOverlay.style.opacity = 0;
+            }, 1000);
+        }
+
         // --- UI Updates ---
 
         function updateMainMenuUI() {
