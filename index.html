@@ -166,6 +166,9 @@
                         <button id="btn-save-words" onclick="saveCurrentWeekWords()" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                             Save List
                         </button>
+                        <button id="btn-delete-words" onclick="deleteCurrentWeekWords()" class="bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled title="Delete this week's list">
+                            🗑️ Delete
+                        </button>
                     </div>
                     <div id="save-status" class="mt-2 text-center text-sm font-bold h-5"></div>
                 </div>
@@ -215,8 +218,15 @@
         // --- Data Management (Supabase) ---
         const supabaseUrl = 'https://apgfskdxexlyyavmhdlg.supabase.co';
         const supabaseKey = 'sb_publishable_rvwuan8wg1tyegGFSt2jMA_E1CJaM5L';
+        
+        // Initialize with custom headers for the sb_publishable key format
         const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey, {
-            db: { schema: 'WordCatcher' }
+            db: { schema: 'WordCatcher' },
+            global: {
+                headers: {
+                    'apikey': supabaseKey
+                }
+            }
         });
 
         // Format: { "YYYY-MM-DD_YYYY-MM-DD": ["WORD1", "WORD2"] }
@@ -534,7 +544,18 @@
             
             const today = new Date();
             
-            schoolWeeks.forEach(w => {
+            // Sort weeks: Newest to Oldest (Descending)
+            let sortedWeeks = [...schoolWeeks];
+            sortedWeeks.sort((a, b) => b.start - a.start);
+            
+            // Move current week to the absolute top
+            const currentIdx = sortedWeeks.findIndex(w => w.id === currentWeekId);
+            if (currentIdx > -1) {
+                const currentWk = sortedWeeks.splice(currentIdx, 1)[0];
+                sortedWeeks.unshift(currentWk);
+            }
+            
+            sortedWeeks.forEach(w => {
                 const wordsCount = getWordsForWeek(w.id).length;
                 const isCurrent = w.id === currentWeekId;
                 
@@ -565,9 +586,16 @@
             
             const textarea = document.getElementById('word-input-area');
             const saveBtn = document.getElementById('btn-save-words');
+            const deleteBtn = document.getElementById('btn-delete-words');
             
             textarea.disabled = false;
             saveBtn.disabled = false;
+            deleteBtn.disabled = false;
+            
+            // Reset delete button state just in case it was pending confirmation
+            deleteBtn.innerHTML = "🗑️ Delete";
+            deleteBtn.classList.add('bg-red-500', 'hover:bg-red-600');
+            deleteBtn.classList.remove('bg-red-700', 'hover:bg-red-800');
             
             const words = getWordsForWeek(weekId);
             textarea.value = words.join('\n');
@@ -628,6 +656,74 @@
             
             renderAdminWeeksList(); // Update badge counts
             updateMainMenuUI(); // Update main menu if current week was edited
+        }
+
+        let deleteConfirmTimeout;
+        async function deleteCurrentWeekWords() {
+            if (!selectedAdminWeekId) return;
+            
+            const deleteBtn = document.getElementById('btn-delete-words');
+            
+            // Custom confirmation logic (two-tap) to avoid browser alert/confirm
+            if (deleteBtn.textContent.trim() !== "Sure?") {
+                deleteBtn.textContent = "Sure?";
+                deleteBtn.classList.remove('bg-red-500', 'hover:bg-red-600');
+                deleteBtn.classList.add('bg-red-700', 'hover:bg-red-800');
+                
+                // Reset button after 3 seconds if not clicked again
+                deleteConfirmTimeout = setTimeout(() => {
+                    deleteBtn.innerHTML = "🗑️ Delete";
+                    deleteBtn.classList.add('bg-red-500', 'hover:bg-red-600');
+                    deleteBtn.classList.remove('bg-red-700', 'hover:bg-red-800');
+                }, 3000);
+                return;
+            }
+            
+            // If they clicked "Sure?", proceed with deletion
+            clearTimeout(deleteConfirmTimeout);
+            deleteBtn.innerHTML = "🗑️ Delete"; 
+            deleteBtn.classList.add('bg-red-500', 'hover:bg-red-600');
+            deleteBtn.classList.remove('bg-red-700', 'hover:bg-red-800');
+            
+            const saveBtn = document.getElementById('btn-save-words');
+            const textarea = document.getElementById('word-input-area');
+            const statusDiv = document.getElementById('save-status');
+            
+            saveBtn.disabled = true;
+            deleteBtn.disabled = true;
+            textarea.disabled = true;
+            statusDiv.textContent = "Deleting from database...";
+            statusDiv.className = "mt-2 text-center text-sm font-bold h-5 text-gray-500";
+
+            // Delete from Supabase
+            const { error } = await supabaseClient
+                .from('weekly_lists')
+                .delete()
+                .eq('week_id', selectedAdminWeekId);
+            
+            if (error) {
+                console.error("Supabase Delete Error:", error);
+                statusDiv.textContent = "Error deleting from database! Check console.";
+                statusDiv.className = "mt-2 text-center text-sm font-bold h-5 text-red-500";
+            } else {
+                // Update local state
+                delete wordListsData[selectedAdminWeekId];
+                textarea.value = '';
+                
+                statusDiv.textContent = `List deleted successfully!`;
+                statusDiv.className = "mt-2 text-center text-sm font-bold h-5 text-red-500";
+            }
+            
+            saveBtn.disabled = false;
+            deleteBtn.disabled = false;
+            textarea.disabled = false;
+            
+            setTimeout(() => {
+                statusDiv.textContent = '';
+            }, 3000);
+            
+            renderAdminWeeksList(); // Update badge counts
+            updateMainMenuUI(); // Update main menu
         }
 
         // --- Game Logic Updates ---
